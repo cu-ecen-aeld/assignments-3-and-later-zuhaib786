@@ -1,5 +1,10 @@
 #include "systemcalls.h"
-
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <linux/fs.h>
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -16,8 +21,9 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int status = system(cmd);
 
-    return true;
+    return status == 0;
 }
 
 /**
@@ -48,7 +54,29 @@ bool do_exec(int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
-
+    pid_t pid = fork();
+    if (pid == -1)
+    {
+        printf("Failed to create fork\n");
+        return false;
+    }
+    if (pid == 0)
+    {
+        //Child process
+        execv(command[0],command);
+        exit(1);
+    }
+    int status, ex_val;
+    ex_val = waitpid(pid, &status, WUNTRACED);
+    if(ex_val < 0)
+    {
+        return false;
+    }
+    if(WIFEXITED(status))
+    {
+        return WEXITSTATUS(status) == 0;
+    }
+    return false;
 /*
  * TODO:
  *   Execute a system command by calling fork, execv(),
@@ -83,7 +111,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
-
+    
 
 /*
  * TODO
@@ -91,7 +119,47 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   redirect standard out to a file specified by outputfile.
  *   The rest of the behaviour is same as do_exec()
  *
-*/
+*/  
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    int pid = fork();
+    if(pid < 0)
+    {
+        printf("Cannot fork");
+        return false;
+    }
+    if(fd <0)
+    {
+        printf("Cannot open the file");
+        return false;
+    }
+   
+    if(pid == 0)
+    {
+        int change_output_stream = dup2(fd, 1);
+        if(change_output_stream < 0)
+        {
+            printf("Cannot cchange the output stream");
+            return false;
+        }
+        close(fd);
+        //Inside child process
+        execv(command[0], command);
+        exit(1);
+    }
+    int status, ex_val;
+    ex_val = waitpid(pid, &status, WUNTRACED);
+    if(ex_val < 0)
+    {
+        close(fd);
+        return false;
+    }
+    if(WIFEXITED(status))
+    {
+        close(fd);
+        return WEXITSTATUS(status) == 0;
+    }
+    close(fd);
+    return false;
 
     va_end(args);
 
